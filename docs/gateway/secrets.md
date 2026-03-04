@@ -221,47 +221,37 @@ Optional per-id errors:
 }
 ```
 
-### 1Password Environments
+### Generic batch resolver pattern
 
-This example uses a small wrapper script that implements the exec provider protocol and calls `op environment read` once per batch.
+For secrets managers that support bulk reads, prefer a small external wrapper that:
 
-- Script: `scripts/secrets/openclaw-op-environments-resolver`
-- `op` is resolved from `PATH` by default (set `OP_BIN` for an absolute override)
-- Requires 1Password CLI `2.33-beta.02` or newer (`op environment read`)
-- Required: `OP_ENVIRONMENT_ID`
-- Auth: prefers `OP_SERVICE_ACCOUNT_TOKEN`; falls back to desktop auth via `OP_ACCOUNT_NAME`
+- accepts OpenClaw protocol input (`ids[]`) on stdin
+- performs one upstream fetch per request
+- maps requested ids into `values`, with per-id misses in `errors`
+- writes protocol v1 JSON to stdout
+
+Example provider config for a user-managed external wrapper:
 
 ```json5
 {
   secrets: {
     providers: {
-      onepassword_environment: {
+      batch_exec: {
         source: "exec",
-        // Point this at wherever you install the resolver.
-        command: "/usr/local/bin/openclaw-op-environments-resolver",
+        command: "/usr/local/bin/openclaw-secret-batch-resolver",
         args: [],
-        passEnv: [
-          "OP_ENVIRONMENT_ID",
-          "OP_SERVICE_ACCOUNT_TOKEN",
-          "OP_ACCOUNT_NAME",
-          "PATH",
-          "OP_BIN",
-        ],
+        passEnv: ["PATH"],
         jsonOnly: true,
-      },
-    },
-  },
-  models: {
-    providers: {
-      openai: {
-        baseUrl: "https://api.openai.com/v1",
-        models: [{ id: "gpt-5", name: "gpt-5" }],
-        apiKey: { source: "exec", provider: "onepassword_environment", id: "OPENAI_API_KEY" },
       },
     },
   },
 }
 ```
+
+External vendor patterns that fit this contract:
+
+- 1Password Environments: wrapper can call `op environment read $OP_ENVIRONMENT_ID` once per batch and map keys to ids. Note: this command requires 1Password CLI `2.33-beta.02` or newer.
+- Bitwarden Secrets: wrapper can call `bws secret list` once per batch and map secret keys to ids.
 
 ### HashiCorp Vault CLI
 
