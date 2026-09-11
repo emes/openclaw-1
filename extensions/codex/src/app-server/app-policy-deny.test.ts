@@ -16,6 +16,7 @@ describe("normalizeCodexDeniedAppPatterns", () => {
         "mcp__codex_apps__epsilon_*",
         "mcp__codex_apps__*",
         "mcp__codex_apps__x_*_y_*",
+        "mcp__codex_apps__gamma_?*",
         "mcp__codex_apps__exact_tool",
         "alpha__*",
       ]),

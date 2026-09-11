@@ -10,8 +10,8 @@ import { partitionMcpServersByConnectionScope } from "../mcp-connection-resolver
 import { expandToolGroups, normalizeToolPolicyName } from "../tool-policy.js";
 
 /**
- * True for `<prefix><literal>*` where `<literal>` holds no further wildcard.
- * `<literal>` may be empty (deny every native app).
+ * True for `<prefix><literal>*` where `<literal>` holds no further glob syntax
+ * (`*` or `?`). `<literal>` may be empty (deny every native app).
  */
 export function isHarnessNativeAppDenyPattern(
   normalizedName: string,
@@ -20,7 +20,7 @@ export function isHarnessNativeAppDenyPattern(
   if (!normalizedName.startsWith(normalizedPrefix) || !normalizedName.endsWith("*")) {
     return false;
   }
-  return !normalizedName.slice(normalizedPrefix.length, -1).includes("*");
+  return !/[*?]/.test(normalizedName.slice(normalizedPrefix.length, -1));
 }
 
 export function normalizeHarnessNativeAppDenyPrefix(

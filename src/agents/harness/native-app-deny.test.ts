@@ -19,6 +19,7 @@ describe("isHarnessNativeAppDenyPattern", () => {
   it("rejects exact names, nested wildcards, and other namespaces", () => {
     expect(isHarnessNativeAppDenyPattern("mcp__codex_apps__gamma_send", prefix)).toBe(false);
     expect(isHarnessNativeAppDenyPattern("mcp__codex_apps__*_send_*", prefix)).toBe(false);
+    expect(isHarnessNativeAppDenyPattern("mcp__codex_apps__gamma_?*", prefix)).toBe(false);
     expect(isHarnessNativeAppDenyPattern("mcp__other__*", prefix)).toBe(false);
     expect(isHarnessNativeAppDenyPattern("gamma-mail__*", prefix)).toBe(false);
   });

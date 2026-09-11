@@ -70,7 +70,7 @@ export function normalizeCodexDeniedAppPatterns(patterns: readonly string[] | un
           (pattern) =>
             pattern.startsWith(CODEX_APPS_TOOL_NAME_PREFIX) &&
             pattern.endsWith("*") &&
-            !pattern.slice(CODEX_APPS_TOOL_NAME_PREFIX.length, -1).includes("*"),
+            !/[*?]/.test(pattern.slice(CODEX_APPS_TOOL_NAME_PREFIX.length, -1)),
         ),
     ),
   ].toSorted();
