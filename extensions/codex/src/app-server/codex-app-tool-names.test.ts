@@ -3,6 +3,7 @@ import type { CodexAppServerTool } from "./app-tool-inventory.js";
 import {
   resolveCodexAppModelToolNames,
   resolveCodexAppModelToolNamesByConnector,
+  resolveCodexNativeMcpServerNamespace,
   sanitizeCodexConnectorName,
 } from "./codex-app-tool-names.js";
 
@@ -25,6 +26,13 @@ describe("sanitizeCodexConnectorName", () => {
     expect(sanitizeCodexConnectorName("Delta Tools")).toBe("delta_tools");
     expect(sanitizeCodexConnectorName("  Gamma-Mail!  ")).toBe("gamma_mail");
     expect(sanitizeCodexConnectorName("***")).toBe("app");
+  });
+});
+
+describe("resolveCodexNativeMcpServerNamespace", () => {
+  it("prefixes and sanitizes the native server key the way Codex names its tools", () => {
+    expect(resolveCodexNativeMcpServerNamespace("codex-apps")).toBe("mcp__codex_apps__");
+    expect(resolveCodexNativeMcpServerNamespace("alpha")).toBe("mcp__alpha__");
   });
 });
 

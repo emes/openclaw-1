@@ -41,6 +41,25 @@ describe("resolveDeniedInheritedMcpServerNames", () => {
     ).toEqual(["Gamma-Mail", "alpha", "gamma-mail"]);
   });
 
+  it("covers inherited servers whose namespace a whole-app deny overlaps", () => {
+    expect(
+      resolveDeniedInheritedMcpServerNames({
+        inheritedServerNames: ["codex_apps__gamma_", "Codex-Apps", "codex_apps_x", "alpha"],
+        deniedServerNames: [],
+        deniedAppPatterns: ["mcp__codex_apps__gamma_*"],
+        configuredServerNames: ["alpha"],
+      }),
+    ).toEqual(["Codex-Apps", "codex_apps__gamma_"]);
+    expect(
+      resolveDeniedInheritedMcpServerNames({
+        inheritedServerNames: ["codex_apps__gamma_", "alpha"],
+        deniedServerNames: undefined,
+        deniedAppPatterns: ["mcp__codex_apps__*"],
+        configuredServerNames: [],
+      }),
+    ).toEqual(["codex_apps__gamma_"]);
+  });
+
   it("returns nothing without denies or without inherited matches", () => {
     expect(
       resolveDeniedInheritedMcpServerNames({

@@ -162,10 +162,13 @@ export async function prepareCodexThreadLifecyclePreflight(params: CodexStartOrR
       )
     : [];
   // A certified `<server>__*` deny must also switch off a same-named server the
-  // agent's native Codex config defines; omission from the projection is not enough.
+  // agent's native Codex config defines; omission from the projection is not
+  // enough. A whole-app deny likewise switches off a native server whose
+  // namespace it overlaps, since the app projection cannot reach that server.
   const deniedMcpServerNames = params.params.pluginHarnessToolPolicyDeniedMcpServers ?? [];
+  const deniedAppPatterns = params.params.pluginHarnessToolPolicyDeniedAppPatterns ?? [];
   const deniedInheritedMcpServerNames =
-    deniedMcpServerNames.length > 0 && !restrictedToolSurface
+    (deniedMcpServerNames.length > 0 || deniedAppPatterns.length > 0) && !restrictedToolSurface
       ? resolveDeniedInheritedMcpServerNames({
           inheritedServerNames: await lifecycleTiming.measure(
             "denied-mcp-server-native-policy",
@@ -178,6 +181,7 @@ export async function prepareCodexThreadLifecyclePreflight(params: CodexStartOrR
               ),
           ),
           deniedServerNames: deniedMcpServerNames,
+          deniedAppPatterns,
           configuredServerNames: Object.keys(params.params.config?.mcp?.servers ?? {}),
         })
       : [];

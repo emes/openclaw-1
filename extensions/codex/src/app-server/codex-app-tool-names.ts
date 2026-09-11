@@ -26,6 +26,14 @@ export function sanitizeCodexConnectorName(name: string): string {
 }
 
 /** `sanitize_responses_api_tool_name`: ASCII alphanumerics and `_` survive, everything else becomes `_`. */
+/**
+ * Model-facing namespace of a native `mcp_servers` entry: `mcp__<server>__`,
+ * with the server key passed through the Responses API sanitizer as Codex does.
+ */
+export function resolveCodexNativeMcpServerNamespace(serverName: string): string {
+  return `${MCP_TOOL_NAME_PREFIX}${sanitizeResponsesApiToolName(serverName)}${MCP_TOOL_NAME_DELIMITER}`;
+}
+
 function sanitizeResponsesApiToolName(name: string): string {
   let sanitized = "";
   for (const character of name) {
