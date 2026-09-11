@@ -1995,6 +1995,50 @@ describe("runAgentHarnessAttempt", () => {
     ]);
   });
 
+  it("isolates native tools for a native app deny that overlaps a configured MCP server", async () => {
+    const received: Array<{ restricted: boolean; deniedApps?: readonly string[] }> = [];
+    const runAttempt = vi.fn<AgentHarness["runAttempt"]>(async (attempt) => {
+      received.push({
+        restricted: attempt.pluginHarnessToolPolicyRestricted === true,
+        deniedApps: attempt.pluginHarnessToolPolicyDeniedAppPatterns,
+      });
+      return createAttemptResult("codex");
+    });
+    registerAgentHarness(
+      {
+        id: "codex",
+        label: "Codex",
+        conversationToolPolicySupport: "exact",
+        conversationToolPolicySafeDenyTools: ["tts"],
+        conversationToolPolicyNativeAppDenyPrefix: "mcp__codex_apps__",
+        supports: (ctx) =>
+          ctx.provider === "codex" ? { supported: true, priority: 100 } : { supported: false },
+        runAttempt,
+      },
+      { ownerPluginId: "codex" },
+    );
+    // A configured server named like the apps server exposes `mcp__codex_apps__…`
+    // tools of its own, which the app projection cannot remove.
+    const config = {
+      mcp: {
+        servers: {
+          "codex-apps": { url: "https://apps.example/mcp", transport: "streamable-http" },
+          alpha: { url: "https://alpha.example/mcp", transport: "streamable-http" },
+        },
+      },
+    } as unknown as OpenClawConfig;
+    for (const conversationToolPolicy of [
+      { deny: ["mcp__codex_apps__gamma_*"] },
+      { deny: ["mcp__codex_apps__*"] },
+    ]) {
+      await runAgentHarnessAttempt({ ...createAttemptParams(config), conversationToolPolicy });
+    }
+    expect(received).toEqual([
+      { restricted: true, deniedApps: ["mcp__codex_apps__gamma_*"] },
+      { restricted: true, deniedApps: ["mcp__codex_apps__*"] },
+    ]);
+  });
+
   it("isolates native tools for configured MCP denies when the harness does not certify them", async () => {
     const received: boolean[] = [];
     const runAttempt = vi.fn<AgentHarness["runAttempt"]>(async (attempt) => {

@@ -58,8 +58,10 @@ import {
 } from "./mcp-server-deny.js";
 import {
   collectHarnessDeniedNativeAppPatterns,
+  harnessNativeAppDenyOverlapsMcpServer,
   isHarnessNativeAppDenyPattern,
   normalizeHarnessNativeAppDenyPrefix,
+  resolveHarnessNativeAppDenyReservedNamespaces,
 } from "./native-app-deny.js";
 import type { AgentHarnessPolicy } from "./policy.js";
 import {
@@ -143,6 +145,8 @@ type PluginHarnessToolPolicyEnforcement = {
   nativeToolNames?: readonly string[];
   deniableMcpServerPatterns?: HarnessDeniableMcpServerPatterns;
   nativeAppDenyPrefix?: string;
+  /** Configured MCP namespaces an app-shaped deny must not be exempted for. */
+  nativeAppDenyReservedNamespaces?: readonly string[];
 };
 
 /** Resolves which denies a harness certifies it enforces against its native surface. */
@@ -155,6 +159,9 @@ function resolveHarnessToolPolicyEnforcement(
   if (harness.conversationToolPolicySupport !== "exact") {
     return { nativeToolNames };
   }
+  const nativeAppDenyPrefix = normalizeHarnessNativeAppDenyPrefix(
+    harness.conversationToolPolicyNativeAppDenyPrefix,
+  );
   return {
     safeDenyToolNames: harness.conversationToolPolicySafeDenyTools,
     nativeToolNames,
@@ -162,8 +169,10 @@ function resolveHarnessToolPolicyEnforcement(
       harness.conversationToolPolicyMcpServerDenySupport === "configured"
         ? resolveHarnessDeniableMcpServerPatterns(config)
         : undefined,
-    nativeAppDenyPrefix: normalizeHarnessNativeAppDenyPrefix(
-      harness.conversationToolPolicyNativeAppDenyPrefix,
+    nativeAppDenyPrefix,
+    nativeAppDenyReservedNamespaces: resolveHarnessNativeAppDenyReservedNamespaces(
+      config,
+      nativeAppDenyPrefix,
     ),
   };
 }
@@ -723,8 +732,13 @@ export function resolvePluginHarnessToolPolicies(
   params: PluginHarnessToolPolicyContext,
   enforcement: PluginHarnessToolPolicyEnforcement = {},
 ): ResolvedPluginHarnessToolPolicies {
-  const { safeDenyToolNames, nativeToolNames, deniableMcpServerPatterns, nativeAppDenyPrefix } =
-    enforcement;
+  const {
+    safeDenyToolNames,
+    nativeToolNames,
+    deniableMcpServerPatterns,
+    nativeAppDenyPrefix,
+    nativeAppDenyReservedNamespaces,
+  } = enforcement;
   const messageProvider = params.messageProvider ?? params.messageChannel;
   const sandboxSessionKey = params.sandboxSessionKey ?? params.sessionKey;
   const sandboxRuntime = resolveSandboxRuntimeStatus({
@@ -848,6 +862,7 @@ export function resolvePluginHarnessToolPolicies(
           safeDenyToolNameSet,
           deniableMcpServerPatterns,
           nativeAppDenyPrefix,
+          nativeAppDenyReservedNamespaces,
         ),
       ),
   };
@@ -875,6 +890,7 @@ function toolPolicyRestrictsHarnessNativeTools(
   safeDenyToolNames: ReadonlySet<string> | undefined,
   deniableMcpServerPatterns: HarnessDeniableMcpServerPatterns | undefined,
   nativeAppDenyPrefix: string | undefined,
+  nativeAppDenyReservedNamespaces: readonly string[] | undefined,
 ): boolean {
   if (!safeDenyToolNames && !deniableMcpServerPatterns?.size && !nativeAppDenyPrefix) {
     return toolPolicyRestrictsTools(policy);
@@ -892,8 +908,13 @@ function toolPolicyRestrictsHarnessNativeTools(
     if (deniableMcpServerPatterns?.has(normalized)) {
       return false;
     }
-    // Native app denies are applied to the harness's own app projection.
-    if (nativeAppDenyPrefix && isHarnessNativeAppDenyPattern(normalized, nativeAppDenyPrefix)) {
+    // Native app denies are applied to the harness's own app projection, unless
+    // the pattern could also reach a configured MCP server's tools.
+    if (
+      nativeAppDenyPrefix &&
+      isHarnessNativeAppDenyPattern(normalized, nativeAppDenyPrefix) &&
+      !harnessNativeAppDenyOverlapsMcpServer(normalized, nativeAppDenyReservedNamespaces ?? [])
+    ) {
       return false;
     }
     if (!safeDenyToolNames) {

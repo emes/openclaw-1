@@ -54,7 +54,10 @@ namespace, so it also covers a tool whose callable name carries no separator
 (a raw `capture_file_upload` under a `Gmail` connector is exposed as
 `mcp__codex_apps__gmailcapture_file_upload`). Tools an app hides from the
 model through `_meta.ui.visibility` are ignored, as Codex ignores them.
-`mcp__codex_apps__*` denies every app. A pattern that
+`mcp__codex_apps__*` denies every app. An app-shaped deny that could also reach
+a configured MCP server's tools (a server named `codex_apps` or
+`codex_apps__<anything>`) still restricts the surface, because the app
+projection cannot remove that server's tools. A pattern that
 matches only some of one app's tools, a pattern that matches no app at all, an
 unreadable inventory, or a `codexPlugins` block that is absent or disabled
 cannot be projected, so that turn runs with all Codex apps disabled and an

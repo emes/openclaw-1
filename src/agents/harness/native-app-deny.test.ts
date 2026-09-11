@@ -1,8 +1,11 @@
 import { describe, expect, it } from "vitest";
+import type { OpenClawConfig } from "../../config/types.openclaw.js";
 import {
   collectHarnessDeniedNativeAppPatterns,
+  harnessNativeAppDenyOverlapsMcpServer,
   isHarnessNativeAppDenyPattern,
   normalizeHarnessNativeAppDenyPrefix,
+  resolveHarnessNativeAppDenyReservedNamespaces,
 } from "./native-app-deny.js";
 
 const prefix = "mcp__codex_apps__";
@@ -43,5 +46,47 @@ describe("collectHarnessDeniedNativeAppPatterns", () => {
       [],
     );
     expect(normalizeHarnessNativeAppDenyPrefix("  ")).toBeUndefined();
+  });
+});
+
+describe("resolveHarnessNativeAppDenyReservedNamespaces", () => {
+  it("maps configured static servers to their model-facing namespaces", () => {
+    const config = {
+      mcp: {
+        servers: {
+          alpha: { url: "https://alpha.example/mcp", transport: "streamable-http" },
+          "Codex-Apps": { url: "https://apps.example/mcp", transport: "streamable-http" },
+        },
+      },
+    } as unknown as OpenClawConfig;
+    expect(resolveHarnessNativeAppDenyReservedNamespaces(config, prefix)).toEqual([
+      "mcp__alpha__",
+      "mcp__codex_apps__",
+    ]);
+    expect(resolveHarnessNativeAppDenyReservedNamespaces(config, undefined)).toEqual([]);
+    expect(resolveHarnessNativeAppDenyReservedNamespaces(undefined, prefix)).toEqual([]);
+  });
+});
+
+describe("harnessNativeAppDenyOverlapsMcpServer", () => {
+  it("flags patterns that could reach a configured server's tools", () => {
+    expect(
+      harnessNativeAppDenyOverlapsMcpServer("mcp__codex_apps__gamma_*", ["mcp__codex_apps__"]),
+    ).toBe(true);
+    expect(harnessNativeAppDenyOverlapsMcpServer("mcp__codex_apps__*", ["mcp__codex_apps__"])).toBe(
+      true,
+    );
+    expect(
+      harnessNativeAppDenyOverlapsMcpServer("mcp__codex_apps__gamma_*", [
+        "mcp__codex_apps__gamma__",
+      ]),
+    ).toBe(true);
+    expect(
+      harnessNativeAppDenyOverlapsMcpServer("mcp__codex_apps__gamma_*", ["mcp__alpha__"]),
+    ).toBe(false);
+    expect(
+      harnessNativeAppDenyOverlapsMcpServer("mcp__codex_apps__gamma_*", ["mcp__codex_apps_x__"]),
+    ).toBe(false);
+    expect(harnessNativeAppDenyOverlapsMcpServer("mcp__codex_apps__gamma_*", [])).toBe(false);
   });
 });
