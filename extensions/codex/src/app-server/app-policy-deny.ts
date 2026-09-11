@@ -106,6 +106,11 @@ export async function readCodexAppModelToolsForDenies(params: {
  */
 function patternCoversWholeApp(pattern: string, namespaces: readonly string[]): boolean {
   const literal = pattern.slice(0, -1);
+  // The global deny covers every app, including one whose tools carry a
+  // connector id but no connector name and so sit under the bare `mcp__codex_apps`.
+  if (literal === CODEX_APPS_TOOL_NAME_PREFIX) {
+    return true;
+  }
   return namespaces.some(
     (namespace) => namespace.startsWith(literal) || literal === `${namespace}_`,
   );

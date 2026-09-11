@@ -69,6 +69,19 @@ describe("resolveCodexAppDenyDecision", () => {
     ).toBe("unenforceable");
   });
 
+  it("denies a nameless connector only through the global pattern", () => {
+    // Without a connector name Codex names the tools under the bare server
+    // namespace, so no `<app>_*` form can address the app.
+    const nameless = {
+      namespaces: ["mcp__codex_apps"],
+      modelToolNames: ["mcp__codex_apps_list_things"],
+    };
+    expect(resolveCodexAppDenyDecision({ app: nameless, patterns: ["mcp__codex_apps__*"] })).toBe(
+      "denied",
+    );
+    expect(resolveCodexAppDenyDecision({ app: nameless, patterns })).toBe("allowed");
+  });
+
   it("ignores tools Codex hides from the model", () => {
     const hiddenOnly = { namespaces: ["mcp__codex_apps__gamma"], modelToolNames: [] };
     expect(resolveCodexAppDenyDecision({ app: hiddenOnly, patterns })).toBe("denied");
