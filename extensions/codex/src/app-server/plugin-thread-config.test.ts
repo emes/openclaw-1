@@ -3849,6 +3849,15 @@ function codexAppsStatusResponse(): JsonObject {
           "gamma.send_item": {
             _meta: { connector_id: "asdk_app_gamma", connector_name: "Gamma" },
           },
+          // App-only widget tool: Codex never declares it to the model, so it must
+          // not count toward deny coverage.
+          "gamma.widget_helper": {
+            _meta: {
+              connector_id: "asdk_app_gamma",
+              connector_name: "Gamma",
+              ui: { visibility: ["app"] },
+            },
+          },
         },
       },
     ],

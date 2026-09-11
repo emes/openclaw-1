@@ -9,7 +9,7 @@ import {
   buildCodexAppDenyUnmatchedDiagnostic,
   createCodexAppDenyGate,
   normalizeCodexDeniedAppPatterns,
-  readCodexAppModelToolNamesForDenies,
+  readCodexAppModelToolsForDenies,
   type CodexAppDenyDiagnostic,
 } from "./app-policy-deny.js";
 import {
@@ -325,7 +325,7 @@ export async function buildCodexPluginThreadConfig(
       : { apps: [] };
   // Denies are matched against the real model-facing tool names per connector;
   // an unreadable inventory leaves every gated app unenforceable (fail closed).
-  const modelToolNamesByApp = await readCodexAppModelToolNamesForDenies({
+  const modelToolsByApp = await readCodexAppModelToolsForDenies({
     request: threadRequest,
     threadId: params.threadId,
     patterns: deniedAppPatterns,
@@ -352,7 +352,7 @@ export async function buildCodexPluginThreadConfig(
   // A deny matching no known app tool cannot be proven satisfied (misspelled
   // namespace, or Codex changed its tool naming).
   const appDenies = createCodexAppDenyGate<CodexPluginThreadConfig>({
-    modelToolNamesByApp,
+    modelToolsByApp,
     patterns: deniedAppPatterns,
     onDenied: (diagnostic) => diagnostics.push(diagnostic),
     failClosed: (appId) => appsDisabledByPolicy(buildCodexAppDenyUnenforceableDiagnostic(appId)),

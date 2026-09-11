@@ -141,6 +141,20 @@ type Candidate = {
 export function resolveCodexAppModelToolNames(
   tools: readonly CodexAppServerTool[],
 ): Map<CodexAppServerTool, string> {
+  return new Map(
+    [...resolveCodexAppModelToolParts(tools)].map(([tool, part]) => [tool, part.modelName]),
+  );
+}
+
+type CodexAppModelToolParts = {
+  /** Namespace after collision hashing, before any length fitting of this tool. */
+  namespace: string;
+  modelName: string;
+};
+
+function resolveCodexAppModelToolParts(
+  tools: readonly CodexAppServerTool[],
+): Map<CodexAppServerTool, CodexAppModelToolParts> {
   const seenRawIdentities = new Set<string>();
   const candidates: Candidate[] = [];
   for (const tool of tools) {
@@ -196,7 +210,7 @@ export function resolveCodexAppModelToolNames(
         : 0,
   );
   const usedNames = new Set<string>();
-  const modelNames = new Map<CodexAppServerTool, string>();
+  const parts = new Map<CodexAppServerTool, CodexAppModelToolParts>();
   for (const candidate of candidates) {
     const [namespace, name] = uniqueCallableParts(
       candidate.namespace,
@@ -205,28 +219,49 @@ export function resolveCodexAppModelToolNames(
       usedNames,
       MCP_TOOL_NAME_DELIMITER.length,
     );
-    modelNames.set(candidate.tool, `${namespace}${name}`);
+    parts.set(candidate.tool, { namespace: candidate.namespace, modelName: `${namespace}${name}` });
   }
-  return modelNames;
+  return parts;
 }
 
+/** One app's model-facing surface, keyed by connector id in the maps below. */
+export type CodexAppModelTools = {
+  /**
+   * `mcp__codex_apps__<connector>` namespaces of the app's tools, after Codex's
+   * collision hashing. Usually one; a whole-app deny names this, not each tool.
+   */
+  namespaces: string[];
+  /** Names the model sees. Tools Codex hides from the model are left out. */
+  modelToolNames: string[];
+};
+
 /**
- * Model-visible tool names grouped by connector id, for the whole inventory at once.
- * The flat name the model sees and calls is `namespace + name` with no separator
- * (`flat_tool_name` in codex-rs/core/src/tools/mod.rs); the `__`-joined form in
- * `join_tool_name` (core/src/tools/handlers/mcp.rs) is used only for hook names.
+ * Per-app namespaces and model-visible tool names, computed over the whole
+ * inventory at once. The flat name the model sees and calls is `namespace + name`
+ * with no separator (`flat_tool_name` in codex-rs/core/src/tools/mod.rs); the
+ * `__`-joined form in `join_tool_name` (core/src/tools/handlers/mcp.rs) is used
+ * only for hook names. Hidden tools still take part in naming, as they do in
+ * Codex, which normalizes every listed tool before filtering model visibility.
  */
 export function resolveCodexAppModelToolNamesByConnector(
   toolsByConnector: ReadonlyMap<string, readonly CodexAppServerTool[]>,
-): Map<string, string[]> {
-  const modelNames = resolveCodexAppModelToolNames([...toolsByConnector.values()].flat());
+): Map<string, CodexAppModelTools> {
+  const parts = resolveCodexAppModelToolParts([...toolsByConnector.values()].flat());
   return new Map(
-    [...toolsByConnector].map(([connectorId, tools]) => [
-      connectorId,
-      tools.flatMap((tool) => {
-        const modelName = modelNames.get(tool);
-        return modelName === undefined ? [] : [modelName];
-      }),
-    ]),
+    [...toolsByConnector].map(([connectorId, tools]) => {
+      const namespaces = new Set<string>();
+      const modelToolNames: string[] = [];
+      for (const tool of tools) {
+        const part = parts.get(tool);
+        if (!part) {
+          continue;
+        }
+        namespaces.add(part.namespace);
+        if (tool.modelVisible !== false) {
+          modelToolNames.push(part.modelName);
+        }
+      }
+      return [connectorId, { namespaces: [...namespaces], modelToolNames }];
+    }),
   );
 }

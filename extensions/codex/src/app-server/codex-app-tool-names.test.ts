@@ -6,8 +6,18 @@ import {
   sanitizeCodexConnectorName,
 } from "./codex-app-tool-names.js";
 
-function tool(name: string, connectorId: string, connectorName?: string): CodexAppServerTool {
-  return { name, connectorId, ...(connectorName ? { connectorName } : {}) };
+function tool(
+  name: string,
+  connectorId: string,
+  connectorName?: string,
+  modelVisible?: boolean,
+): CodexAppServerTool {
+  return {
+    name,
+    connectorId,
+    ...(connectorName ? { connectorName } : {}),
+    ...(modelVisible === false ? { modelVisible } : {}),
+  };
 }
 
 describe("sanitizeCodexConnectorName", () => {
@@ -74,8 +84,44 @@ describe("resolveCodexAppModelToolNames", () => {
       ]),
     );
     expect([...grouped]).toEqual([
-      ["asdk_app_delta", ["mcp__codex_apps__delta_list_things"]],
-      ["asdk_app_gamma", ["mcp__codex_apps__gamma_list_items", "mcp__codex_apps__gamma_send_item"]],
+      [
+        "asdk_app_delta",
+        {
+          namespaces: ["mcp__codex_apps__delta"],
+          modelToolNames: ["mcp__codex_apps__delta_list_things"],
+        },
+      ],
+      [
+        "asdk_app_gamma",
+        {
+          namespaces: ["mcp__codex_apps__gamma"],
+          modelToolNames: ["mcp__codex_apps__gamma_list_items", "mcp__codex_apps__gamma_send_item"],
+        },
+      ],
     ]);
+  });
+
+  it("keeps hidden tools out of the model names but inside collision hashing", () => {
+    // Codex normalizes every listed tool before it filters model visibility, so a
+    // hidden tool still forces the hash suffix onto the visible tool it collides with.
+    const visible = tool("gamma.list", "asdk_app_gamma", "Gamma");
+    const hidden = tool("gamma.list", "asdk_app_gamma_widgets", "Gamma", false);
+    const grouped = resolveCodexAppModelToolNamesByConnector(
+      new Map([
+        ["asdk_app_gamma", [visible]],
+        ["asdk_app_gamma_widgets", [hidden]],
+      ]),
+    );
+    const gamma = grouped.get("asdk_app_gamma")!;
+    expect(gamma.modelToolNames).toHaveLength(1);
+    expect(gamma.modelToolNames[0]).not.toBe("mcp__codex_apps__gamma_list");
+    expect(gamma.modelToolNames[0]).toBe(
+      resolveCodexAppModelToolNames([visible, hidden]).get(visible),
+    );
+    const widgets = grouped.get("asdk_app_gamma_widgets")!;
+    expect(widgets.modelToolNames).toEqual([]);
+    expect(widgets.namespaces).toHaveLength(1);
+    expect(widgets.namespaces[0]).toMatch(/^mcp__codex_apps__gamma/);
+    expect(widgets.namespaces[0]).not.toBe(gamma.namespaces[0]);
   });
 });

@@ -3,7 +3,10 @@
  * OpenClaw admits into a native Codex thread.
  */
 import { readCodexAppToolsByConnector } from "./app-tool-inventory.js";
-import { resolveCodexAppModelToolNamesByConnector } from "./codex-app-tool-names.js";
+import {
+  resolveCodexAppModelToolNamesByConnector,
+  type CodexAppModelTools,
+} from "./codex-app-tool-names.js";
 import type { ResolvedCodexPluginPolicy } from "./config.js";
 
 /** Model-facing prefix Codex gives every shared `codex_apps` tool. */
@@ -78,11 +81,11 @@ export function normalizeCodexDeniedAppPatterns(patterns: readonly string[] | un
  * model-visible name of every tool the way Codex does. An unreadable inventory
  * yields undefined so every gated app fails closed.
  */
-export async function readCodexAppModelToolNamesForDenies(params: {
+export async function readCodexAppModelToolsForDenies(params: {
   request: (method: string, params: Record<string, unknown>) => Promise<unknown>;
   threadId?: string;
   patterns: readonly string[];
-}): Promise<ReadonlyMap<string, readonly string[]> | undefined> {
+}): Promise<ReadonlyMap<string, CodexAppModelTools> | undefined> {
   if (params.patterns.length === 0) {
     return new Map();
   }
@@ -92,45 +95,70 @@ export async function readCodexAppModelToolNamesForDenies(params: {
 }
 
 /**
- * Returns the patterns that match no tool of any known app. Codex does not
+ * A pattern whose literal is the app namespace, a prefix of it (including the
+ * global `mcp__codex_apps__*`), or the namespace plus `_` denies the whole app,
+ * whatever callable names its tools carry and even when Codex hides every tool
+ * from the model. Codex appends a callable name to the namespace with no
+ * separator, so a tool whose raw name lacks the connector prefix
+ * (`capture_file_upload` under `Gmail` becomes
+ * `mcp__codex_apps__gmailcapture_file_upload`) would otherwise escape the
+ * advertised `<app>_*` form.
+ */
+function patternCoversWholeApp(pattern: string, namespaces: readonly string[]): boolean {
+  const literal = pattern.slice(0, -1);
+  return namespaces.some(
+    (namespace) => namespace.startsWith(literal) || literal === `${namespace}_`,
+  );
+}
+
+/**
+ * Returns the patterns that match no known app namespace or tool. Codex does not
  * expose model-facing app tool names over the protocol, so a deny that matches
  * nothing may be a misspelling or a naming change; either way it must not be
  * treated as satisfied.
  */
 export function findUnmatchedCodexAppDenyPatterns(params: {
-  modelToolNamesByApp: ReadonlyMap<string, readonly string[]>;
+  modelToolsByApp: ReadonlyMap<string, CodexAppModelTools>;
   patterns: readonly string[];
 }): string[] {
-  const modelToolNames = [...params.modelToolNamesByApp.values()].flat();
+  const apps = [...params.modelToolsByApp.values()];
+  const modelToolNames = apps.flatMap((app) => app.modelToolNames);
   return params.patterns.filter((pattern) => {
     const literal = pattern.slice(0, -1);
-    return !modelToolNames.some((modelToolName) => modelToolName.startsWith(literal));
+    return (
+      !apps.some((app) => patternCoversWholeApp(pattern, app.namespaces)) &&
+      !modelToolNames.some((modelToolName) => modelToolName.startsWith(literal))
+    );
   });
 }
 
 /**
- * Decides whether the patterns deny every model-visible tool of one app. A
- * pattern covering every tool denies the app; one covering only some tools has
- * no projectable form and fails closed, as does an app whose tools could not be read.
+ * Decides whether the patterns deny one app. A whole-app pattern, or patterns
+ * covering every model-visible tool, deny the app; patterns covering only some
+ * tools have no projectable form and fail closed, as does an app whose tools
+ * could not be read. Tools Codex hides from the model do not count.
  */
 export function resolveCodexAppDenyDecision(params: {
-  modelToolNames: readonly string[] | undefined;
+  app: CodexAppModelTools | undefined;
   patterns: readonly string[];
 }): CodexAppDenyDecision {
   if (params.patterns.length === 0) {
     return "allowed";
   }
-  if (!params.modelToolNames?.length) {
+  if (!params.app) {
     return "unenforceable";
   }
+  if (params.patterns.some((pattern) => patternCoversWholeApp(pattern, params.app!.namespaces))) {
+    return "denied";
+  }
   const literals = params.patterns.map((pattern) => pattern.slice(0, -1));
-  const matched = params.modelToolNames.filter((modelToolName) =>
+  const matched = params.app.modelToolNames.filter((modelToolName) =>
     literals.some((literal) => modelToolName.startsWith(literal)),
   ).length;
   if (matched === 0) {
     return "allowed";
   }
-  return matched === params.modelToolNames.length ? "denied" : "unenforceable";
+  return matched === params.app.modelToolNames.length ? "denied" : "unenforceable";
 }
 
 /**
@@ -140,7 +168,7 @@ export function resolveCodexAppDenyDecision(params: {
  * exactly. `unmatched` lists patterns that touch no known app tool.
  */
 export function createCodexAppDenyGate<T>(params: {
-  modelToolNamesByApp: ReadonlyMap<string, readonly string[]> | undefined;
+  modelToolsByApp: ReadonlyMap<string, CodexAppModelTools> | undefined;
   patterns: readonly string[];
   onDenied: (diagnostic: CodexAppDenyDiagnostic) => void;
   failClosed: (appId: string) => T;
@@ -149,15 +177,15 @@ export function createCodexAppDenyGate<T>(params: {
   unmatched: string[];
 } {
   return {
-    unmatched: params.modelToolNamesByApp
+    unmatched: params.modelToolsByApp
       ? findUnmatchedCodexAppDenyPatterns({
-          modelToolNamesByApp: params.modelToolNamesByApp,
+          modelToolsByApp: params.modelToolsByApp,
           patterns: params.patterns,
         })
       : [],
     apply: (appId, plugin) => {
       const decision = resolveCodexAppDenyDecision({
-        modelToolNames: params.modelToolNamesByApp?.get(appId),
+        app: params.modelToolsByApp?.get(appId),
         patterns: params.patterns,
       });
       if (decision === "denied") {

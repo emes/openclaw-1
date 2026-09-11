@@ -3,7 +3,11 @@
  * connector (app) id, with the connector metadata Codex uses to name tools.
  */
 import { asOptionalRecord } from "openclaw/plugin-sdk/string-coerce-runtime";
-import { readCodexMcpToolConnectorId, readCodexMcpToolConnectorName } from "./mcp-tool-metadata.js";
+import {
+  readCodexMcpToolConnectorId,
+  readCodexMcpToolConnectorName,
+  readCodexMcpToolUiVisibility,
+} from "./mcp-tool-metadata.js";
 import { isJsonObject } from "./protocol.js";
 
 export const CODEX_APPS_MCP_SERVER = "codex_apps";
@@ -21,6 +25,12 @@ export type CodexAppServerTool = {
   name: string;
   connectorId: string;
   connectorName?: string;
+  /**
+   * False when `_meta.ui.visibility` lists targets without `model`: Codex still
+   * accepts calls to such a tool but never declares it to the model
+   * (`tool_is_model_visible`, codex-mcp/src/connection_manager/tool_catalog.rs).
+   */
+  modelVisible?: boolean;
   title?: string;
   destructiveHint?: boolean;
   openWorldHint?: boolean;
@@ -59,11 +69,13 @@ export async function readCodexAppToolsByConnector(params: {
         const metadata = asOptionalRecord(tool);
         const annotations = asOptionalRecord(metadata?.annotations);
         const connectorName = readCodexMcpToolConnectorName(tool);
+        const visibility = readCodexMcpToolUiVisibility(tool);
         const tools = toolsByApp.get(connectorId) ?? [];
         tools.push({
           name: toolName,
           connectorId,
           ...(connectorName ? { connectorName } : {}),
+          ...(visibility && !visibility.includes("model") ? { modelVisible: false } : {}),
           title: typeof metadata?.title === "string" ? metadata.title : undefined,
           destructiveHint: annotations?.destructiveHint === false ? false : undefined,
           openWorldHint: annotations?.openWorldHint === false ? false : undefined,

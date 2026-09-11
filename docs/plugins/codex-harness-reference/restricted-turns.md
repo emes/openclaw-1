@@ -49,7 +49,12 @@ namespace Codex derives from the app's connector name (for example
 `mcp__codex_apps__gamma_list_items`), also stay native: the harness rebuilds
 the model-visible names from the `codex_apps` inventory in `mcpServerStatus/list`
 using Codex's own naming rules and leaves a fully covered app out of the
-thread's `apps` patch. `mcp__codex_apps__*` denies every app. A pattern that
+thread's `apps` patch. The `<app>_*` form denies the whole app by its
+namespace, so it also covers a tool whose callable name carries no separator
+(a raw `capture_file_upload` under a `Gmail` connector is exposed as
+`mcp__codex_apps__gmailcapture_file_upload`). Tools an app hides from the
+model through `_meta.ui.visibility` are ignored, as Codex ignores them.
+`mcp__codex_apps__*` denies every app. A pattern that
 matches only some of one app's tools, a pattern that matches no app at all, an
 unreadable inventory, or a `codexPlugins` block that is absent or disabled
 cannot be projected, so that turn runs with all Codex apps disabled and an

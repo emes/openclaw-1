@@ -3,7 +3,7 @@ import {
   createCodexAppDenyGate,
   findUnmatchedCodexAppDenyPatterns,
   normalizeCodexDeniedAppPatterns,
-  readCodexAppModelToolNamesForDenies,
+  readCodexAppModelToolsForDenies,
   resolveCodexAppDenyDecision,
 } from "./app-policy-deny.js";
 
@@ -26,47 +26,74 @@ describe("normalizeCodexDeniedAppPatterns", () => {
 
 describe("resolveCodexAppDenyDecision", () => {
   const patterns = ["mcp__codex_apps__gamma_*"];
-  const gammaTools = ["mcp__codex_apps__gamma_list_items", "mcp__codex_apps__gamma_send_item"];
+  const gamma = {
+    namespaces: ["mcp__codex_apps__gamma"],
+    modelToolNames: ["mcp__codex_apps__gamma_list_items", "mcp__codex_apps__gamma_send_item"],
+  };
+  const delta = {
+    namespaces: ["mcp__codex_apps__delta"],
+    modelToolNames: ["mcp__codex_apps__delta_list_things"],
+  };
 
   it("allows apps no pattern covers", () => {
-    expect(resolveCodexAppDenyDecision({ modelToolNames: ["delta.list_things"], patterns })).toBe(
-      "allowed",
-    );
-    expect(resolveCodexAppDenyDecision({ modelToolNames: undefined, patterns: [] })).toBe(
-      "allowed",
-    );
+    expect(resolveCodexAppDenyDecision({ app: delta, patterns })).toBe("allowed");
+    expect(resolveCodexAppDenyDecision({ app: undefined, patterns: [] })).toBe("allowed");
   });
 
   it("denies apps whose every tool a pattern covers", () => {
-    expect(resolveCodexAppDenyDecision({ modelToolNames: gammaTools, patterns })).toBe("denied");
+    expect(resolveCodexAppDenyDecision({ app: gamma, patterns })).toBe("denied");
+    expect(resolveCodexAppDenyDecision({ app: gamma, patterns: ["mcp__codex_apps__gam*"] })).toBe(
+      "denied",
+    );
+    expect(resolveCodexAppDenyDecision({ app: gamma, patterns: ["mcp__codex_apps__*"] })).toBe(
+      "denied",
+    );
+  });
+
+  it("denies the whole app by namespace when a callable carries no separator", () => {
+    // Raw `capture_file_upload` under connector `Gmail` is named
+    // `mcp__codex_apps__gmailcapture_file_upload`; the advertised `<app>_*` form
+    // still denies the app because it names the namespace.
+    const gmail = {
+      namespaces: ["mcp__codex_apps__gmail"],
+      modelToolNames: ["mcp__codex_apps__gmailcapture_file_upload", "mcp__codex_apps__gmail_send"],
+    };
     expect(
-      resolveCodexAppDenyDecision({
-        modelToolNames: gammaTools,
-        patterns: ["mcp__codex_apps__gam*"],
-      }),
+      resolveCodexAppDenyDecision({ app: gmail, patterns: ["mcp__codex_apps__gmail_*"] }),
+    ).toBe("denied");
+    expect(resolveCodexAppDenyDecision({ app: gmail, patterns: ["mcp__codex_apps__gmail*"] })).toBe(
+      "denied",
+    );
+    expect(
+      resolveCodexAppDenyDecision({ app: gmail, patterns: ["mcp__codex_apps__gmail_send*"] }),
+    ).toBe("unenforceable");
+  });
+
+  it("ignores tools Codex hides from the model", () => {
+    const hiddenOnly = { namespaces: ["mcp__codex_apps__gamma"], modelToolNames: [] };
+    expect(resolveCodexAppDenyDecision({ app: hiddenOnly, patterns })).toBe("denied");
+    expect(resolveCodexAppDenyDecision({ app: hiddenOnly, patterns: ["mcp__codex_apps__*"] })).toBe(
+      "denied",
+    );
+    expect(
+      resolveCodexAppDenyDecision({ app: hiddenOnly, patterns: ["mcp__codex_apps__gam*"] }),
     ).toBe("denied");
     expect(
-      resolveCodexAppDenyDecision({ modelToolNames: gammaTools, patterns: ["mcp__codex_apps__*"] }),
-    ).toBe("denied");
+      resolveCodexAppDenyDecision({ app: hiddenOnly, patterns: ["mcp__codex_apps__gamma_send_*"] }),
+    ).toBe("allowed");
   });
 
   it("fails closed for partial coverage or unreadable tools", () => {
     expect(
-      resolveCodexAppDenyDecision({
-        modelToolNames: gammaTools,
-        patterns: ["mcp__codex_apps__gamma_send_*"],
-      }),
+      resolveCodexAppDenyDecision({ app: gamma, patterns: ["mcp__codex_apps__gamma_send_*"] }),
     ).toBe("unenforceable");
-    expect(resolveCodexAppDenyDecision({ modelToolNames: undefined, patterns })).toBe(
-      "unenforceable",
-    );
-    expect(resolveCodexAppDenyDecision({ modelToolNames: [], patterns })).toBe("unenforceable");
+    expect(resolveCodexAppDenyDecision({ app: undefined, patterns })).toBe("unenforceable");
   });
 });
 
-describe("readCodexAppModelToolNamesForDenies", () => {
-  it("returns model-visible names grouped by connector id", async () => {
-    const names = await readCodexAppModelToolNamesForDenies({
+describe("readCodexAppModelToolsForDenies", () => {
+  it("returns namespaces and model-visible names grouped by connector id", async () => {
+    const names = await readCodexAppModelToolsForDenies({
       patterns: ["mcp__codex_apps__gamma_*"],
       request: async (method) => {
         expect(method).toBe("mcpServerStatus/list");
@@ -85,6 +112,13 @@ describe("readCodexAppModelToolNamesForDenies", () => {
                 "gamma.send_item": {
                   _meta: { connector_id: "asdk_app_gamma", connector_name: "Gamma" },
                 },
+                "gamma.widget_helper": {
+                  _meta: {
+                    connector_id: "asdk_app_gamma",
+                    connector_name: "Gamma",
+                    ui: { visibility: ["app"] },
+                  },
+                },
                 orphan: {},
               },
             },
@@ -94,14 +128,26 @@ describe("readCodexAppModelToolNamesForDenies", () => {
       },
     });
     expect([...(names ?? [])]).toEqual([
-      ["asdk_app_delta", ["mcp__codex_apps__delta_list_things"]],
-      ["asdk_app_gamma", ["mcp__codex_apps__gamma_list_items", "mcp__codex_apps__gamma_send_item"]],
+      [
+        "asdk_app_delta",
+        {
+          namespaces: ["mcp__codex_apps__delta"],
+          modelToolNames: ["mcp__codex_apps__delta_list_things"],
+        },
+      ],
+      [
+        "asdk_app_gamma",
+        {
+          namespaces: ["mcp__codex_apps__gamma"],
+          modelToolNames: ["mcp__codex_apps__gamma_list_items", "mcp__codex_apps__gamma_send_item"],
+        },
+      ],
     ]);
   });
 
   it("skips the read without patterns and fails closed when the read throws", async () => {
     expect(
-      await readCodexAppModelToolNamesForDenies({
+      await readCodexAppModelToolsForDenies({
         patterns: [],
         request: async () => {
           throw new Error("must not be called");
@@ -109,7 +155,7 @@ describe("readCodexAppModelToolNamesForDenies", () => {
       }),
     ).toEqual(new Map());
     expect(
-      await readCodexAppModelToolNamesForDenies({
+      await readCodexAppModelToolsForDenies({
         patterns: ["mcp__codex_apps__gamma_*"],
         request: async () => {
           throw new Error("unavailable");
@@ -120,25 +166,39 @@ describe("readCodexAppModelToolNamesForDenies", () => {
 });
 
 describe("findUnmatchedCodexAppDenyPatterns", () => {
-  const modelToolNamesByApp = new Map<string, readonly string[]>([
-    ["asdk_app_delta", ["mcp__codex_apps__delta_list_things"]],
-    ["asdk_app_gamma", ["mcp__codex_apps__gamma_list_items", "mcp__codex_apps__gamma_send_item"]],
+  const modelToolsByApp = new Map([
+    [
+      "asdk_app_delta",
+      {
+        namespaces: ["mcp__codex_apps__delta"],
+        modelToolNames: ["mcp__codex_apps__delta_list_things"],
+      },
+    ],
+    [
+      "asdk_app_gamma",
+      {
+        namespaces: ["mcp__codex_apps__gamma"],
+        modelToolNames: ["mcp__codex_apps__gamma_list_items", "mcp__codex_apps__gamma_send_item"],
+      },
+    ],
+    ["asdk_app_hidden", { namespaces: ["mcp__codex_apps__hidden"], modelToolNames: [] }],
   ]);
 
-  it("returns only patterns that touch no known app tool", () => {
+  it("returns only patterns that touch no known app namespace or tool", () => {
     expect(
       findUnmatchedCodexAppDenyPatterns({
-        modelToolNamesByApp,
+        modelToolsByApp,
         patterns: [
           "mcp__codex_apps__gamma_*",
           "mcp__codex_apps__gamma_send_*",
+          "mcp__codex_apps__hidden_*",
           "mcp__codex_apps__*",
           "mcp__codex_apps__zeta_*",
           "mcp__codex_apps__gamma__*",
         ],
       }),
     ).toEqual(["mcp__codex_apps__zeta_*", "mcp__codex_apps__gamma__*"]);
-    expect(findUnmatchedCodexAppDenyPatterns({ modelToolNamesByApp, patterns: [] })).toEqual([]);
+    expect(findUnmatchedCodexAppDenyPatterns({ modelToolsByApp, patterns: [] })).toEqual([]);
   });
 });
 
@@ -146,11 +206,23 @@ describe("createCodexAppDenyGate", () => {
   it("admits, skips, or fails closed per app and records deny diagnostics", () => {
     const diagnostics: unknown[] = [];
     const gate = createCodexAppDenyGate<string>({
-      modelToolNamesByApp: new Map([
-        ["asdk_app_delta", ["mcp__codex_apps__delta_list_things"]],
+      modelToolsByApp: new Map([
+        [
+          "asdk_app_delta",
+          {
+            namespaces: ["mcp__codex_apps__delta"],
+            modelToolNames: ["mcp__codex_apps__delta_list_things"],
+          },
+        ],
         [
           "asdk_app_gamma",
-          ["mcp__codex_apps__gamma_list_items", "mcp__codex_apps__gamma_send_item"],
+          {
+            namespaces: ["mcp__codex_apps__gamma"],
+            modelToolNames: [
+              "mcp__codex_apps__gamma_list_items",
+              "mcp__codex_apps__gamma_send_item",
+            ],
+          },
         ],
       ]),
       patterns: ["mcp__codex_apps__gamma_*"],
