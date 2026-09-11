@@ -16,7 +16,7 @@ const MAX_TOOL_NAME_LENGTH = 128;
 const CALLABLE_NAME_HASH_LEN = 12;
 
 /** `sanitize_name`: lowercase ASCII alphanumerics, everything else `_`, trimmed, `app` if empty. */
-export function sanitizeCodexConnectorName(name: string): string {
+function sanitizeCodexConnectorName(name: string): string {
   let slug = "";
   for (const character of name) {
     slug += /^[A-Za-z0-9]$/.test(character) ? character.toLowerCase() : "-";
@@ -140,19 +140,6 @@ type Candidate = {
   namespace: string;
   name: string;
 };
-
-/**
- * `normalize_tools_for_model_with_prefix` for the `codex_apps` server: returns the
- * model-visible name of every tool, computed over the whole inventory so that
- * collision hashing and length fitting match what Codex sends the model.
- */
-export function resolveCodexAppModelToolNames(
-  tools: readonly CodexAppServerTool[],
-): Map<CodexAppServerTool, string> {
-  return new Map(
-    [...resolveCodexAppModelToolParts(tools)].map(([tool, part]) => [tool, part.modelName]),
-  );
-}
 
 type CodexAppModelToolParts = {
   /** Namespace after collision hashing, before any length fitting of this tool. */

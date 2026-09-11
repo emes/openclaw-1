@@ -12,7 +12,7 @@ import type { ResolvedCodexPluginPolicy } from "./config.js";
 /** Model-facing prefix Codex gives every shared `codex_apps` tool. */
 export const CODEX_APPS_TOOL_NAME_PREFIX = "mcp__codex_apps__";
 
-export type CodexAppDenyDecision = "allowed" | "denied" | "unenforceable";
+type CodexAppDenyDecision = "allowed" | "denied" | "unenforceable";
 
 /** Diagnostic emitted when tool policy removes or cannot safely scope a Codex app. */
 export type CodexAppDenyDiagnostic = {
@@ -21,7 +21,7 @@ export type CodexAppDenyDiagnostic = {
   message: string;
 };
 
-export function buildCodexAppDeniedDiagnostic(
+function buildCodexAppDeniedDiagnostic(
   appId: string,
   plugin?: ResolvedCodexPluginPolicy,
 ): CodexAppDenyDiagnostic {
@@ -122,7 +122,7 @@ function patternCoversWholeApp(pattern: string, namespaces: readonly string[]): 
  * nothing may be a misspelling or a naming change; either way it must not be
  * treated as satisfied.
  */
-export function findUnmatchedCodexAppDenyPatterns(params: {
+function findUnmatchedCodexAppDenyPatterns(params: {
   modelToolsByApp: ReadonlyMap<string, CodexAppModelTools>;
   patterns: readonly string[];
 }): string[] {
@@ -143,7 +143,7 @@ export function findUnmatchedCodexAppDenyPatterns(params: {
  * tools have no projectable form and fail closed, as does an app whose tools
  * could not be read. Tools Codex hides from the model do not count.
  */
-export function resolveCodexAppDenyDecision(params: {
+function resolveCodexAppDenyDecision(params: {
   app: CodexAppModelTools | undefined;
   patterns: readonly string[];
 }): CodexAppDenyDecision {

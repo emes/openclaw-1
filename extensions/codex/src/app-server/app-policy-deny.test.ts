@@ -1,11 +1,40 @@
 import { describe, expect, it } from "vitest";
 import {
   createCodexAppDenyGate,
-  findUnmatchedCodexAppDenyPatterns,
   normalizeCodexDeniedAppPatterns,
   readCodexAppModelToolsForDenies,
-  resolveCodexAppDenyDecision,
 } from "./app-policy-deny.js";
+import type { CodexAppModelTools } from "./codex-app-tool-names.js";
+
+const APP_ID = "asdk_app_under_test";
+
+/** The gate's per-app verdict, read back through its public `apply` contract. */
+function resolveCodexAppDenyDecision(params: {
+  app: CodexAppModelTools | undefined;
+  patterns: readonly string[];
+}): "allowed" | "denied" | "unenforceable" {
+  const gate = createCodexAppDenyGate<"unenforceable">({
+    modelToolsByApp: new Map(params.app ? [[APP_ID, params.app]] : []),
+    patterns: params.patterns,
+    onDenied: () => {},
+    failClosed: () => "unenforceable",
+  });
+  const result = gate.apply(APP_ID);
+  return result === true ? "denied" : result === false ? "allowed" : result;
+}
+
+function findUnmatchedCodexAppDenyPatterns(params: {
+  modelToolsByApp: ReadonlyMap<string, CodexAppModelTools>;
+  patterns: readonly string[];
+}): string[] {
+  return createCodexAppDenyGate<never>({
+    ...params,
+    onDenied: () => {},
+    failClosed: () => {
+      throw new Error("not expected");
+    },
+  }).unmatched;
+}
 
 describe("normalizeCodexDeniedAppPatterns", () => {
   it("keeps only well-formed namespace patterns, lowercased, unique, sorted", () => {
@@ -25,7 +54,7 @@ describe("normalizeCodexDeniedAppPatterns", () => {
   });
 });
 
-describe("resolveCodexAppDenyDecision", () => {
+describe("createCodexAppDenyGate apply decisions", () => {
   const patterns = ["mcp__codex_apps__gamma_*"];
   const gamma = {
     namespaces: ["mcp__codex_apps__gamma"],
@@ -179,7 +208,7 @@ describe("readCodexAppModelToolsForDenies", () => {
   });
 });
 
-describe("findUnmatchedCodexAppDenyPatterns", () => {
+describe("createCodexAppDenyGate unmatched patterns", () => {
   const modelToolsByApp = new Map([
     [
       "asdk_app_delta",

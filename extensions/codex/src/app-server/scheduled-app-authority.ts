@@ -220,7 +220,7 @@ type CodexScheduledAppPolicyRequest = (
   params: Record<string, unknown>,
 ) => Promise<unknown>;
 
-export async function readCodexScheduledAppToolsByApp(params: {
+async function readCodexScheduledAppToolsByApp(params: {
   request: CodexScheduledAppPolicyRequest;
   threadId?: string;
 }): Promise<Map<string, Map<string, CodexScheduledAppTool>>> {
