@@ -17,8 +17,10 @@ export type HarnessDeniableMcpServerPatterns = ReadonlyMap<string, string>;
  * `mcp.servers["Gamma Mail"]` matches `gamma-mail__*` as well. A pattern that
  * could name more than one server (one server's raw key normalizing to another
  * server's safe name) is omitted, so such a deny stays fail-closed instead of
- * disabling the wrong server. Requester-scoped servers never enter
- * harness-native config and are omitted.
+ * disabling the wrong server. So is a pattern whose literal is a prefix of
+ * another server's namespace (`alpha__*` beside a server named `alpha__beta`),
+ * since ordinary policy matching would also cover that server's tools.
+ * Requester-scoped servers never enter harness-native config and are omitted.
  */
 export function resolveHarnessDeniableMcpServerPatterns(
   config: OpenClawConfig | undefined,
@@ -48,7 +50,17 @@ export function resolveHarnessDeniableMcpServerPatterns(
       continue;
     }
     const [serverName] = owners;
-    if (serverName !== undefined && Object.hasOwn(staticServers, serverName)) {
+    if (serverName === undefined || !Object.hasOwn(staticServers, serverName)) {
+      continue;
+    }
+    const literal = pattern.slice(0, -1);
+    const coversAnotherServer = [...candidates].some(
+      ([otherPattern, otherOwners]) =>
+        otherPattern !== pattern &&
+        otherPattern.startsWith(literal) &&
+        !otherOwners.has(serverName),
+    );
+    if (!coversAnotherServer) {
       patterns.set(pattern, serverName);
     }
   }

@@ -56,6 +56,23 @@ describe("resolveHarnessDeniableMcpServerPatterns", () => {
     ).toEqual(["alpha"]);
   });
 
+  it("omits patterns whose literal also covers another server's namespace", () => {
+    const nested = {
+      mcp: {
+        servers: {
+          alpha: { url: "https://alpha.example/mcp", transport: "streamable-http" },
+          alpha__beta: { url: "https://beta.example/mcp", transport: "streamable-http" },
+          gamma: { url: "https://gamma.example/mcp", transport: "streamable-http" },
+        },
+      },
+    } as unknown as OpenClawConfig;
+    const patterns = resolveHarnessDeniableMcpServerPatterns(nested);
+    // `alpha__*` would also match `alpha__beta__…` tools under ordinary matching.
+    expect(patterns.has("alpha__*")).toBe(false);
+    expect(patterns.get("alpha__beta__*")).toBe("alpha__beta");
+    expect(patterns.get("gamma__*")).toBe("gamma");
+  });
+
   it("never certifies a server whose key carries glob syntax", () => {
     const globbed = {
       mcp: {
