@@ -57,12 +57,17 @@ describe("resolveHarnessNativeAppDenyReservedNamespaces", () => {
         servers: {
           alpha: { url: "https://alpha.example/mcp", transport: "streamable-http" },
           "Codex-Apps": { url: "https://apps.example/mcp", transport: "streamable-http" },
+          mcp__codex_apps__gamma: {
+            url: "https://gamma.example/mcp",
+            transport: "streamable-http",
+          },
         },
       },
     } as unknown as OpenClawConfig;
     expect(resolveHarnessNativeAppDenyReservedNamespaces(config, prefix)).toEqual([
       "mcp__alpha__",
       "mcp__codex_apps__",
+      "mcp__codex_apps__gamma__",
     ]);
     expect(resolveHarnessNativeAppDenyReservedNamespaces(config, undefined)).toEqual([]);
     expect(resolveHarnessNativeAppDenyReservedNamespaces(undefined, prefix)).toEqual([]);

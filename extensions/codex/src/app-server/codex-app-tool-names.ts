@@ -29,9 +29,15 @@ function sanitizeCodexConnectorName(name: string): string {
 /**
  * Model-facing namespace of a native `mcp_servers` entry: `mcp__<server>__`,
  * with the server key passed through the Responses API sanitizer as Codex does.
+ * A key that already starts with `mcp__` keeps it rather than gaining a second
+ * one (`callable_namespace_with_prefix`, codex-mcp/src/tools.rs).
  */
 export function resolveCodexNativeMcpServerNamespace(serverName: string): string {
-  return `${MCP_TOOL_NAME_PREFIX}${sanitizeResponsesApiToolName(serverName)}${MCP_TOOL_NAME_DELIMITER}`;
+  const namespace = sanitizeResponsesApiToolName(serverName);
+  const prefixed = namespace.startsWith(MCP_TOOL_NAME_PREFIX)
+    ? namespace
+    : `${MCP_TOOL_NAME_PREFIX}${namespace}`;
+  return `${prefixed}${MCP_TOOL_NAME_DELIMITER}`;
 }
 
 function sanitizeResponsesApiToolName(name: string): string {

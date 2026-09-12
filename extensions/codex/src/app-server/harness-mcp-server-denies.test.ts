@@ -44,12 +44,18 @@ describe("resolveDeniedInheritedMcpServerNames", () => {
   it("covers inherited servers whose namespace a whole-app deny overlaps", () => {
     expect(
       resolveDeniedInheritedMcpServerNames({
-        inheritedServerNames: ["codex_apps__gamma_", "Codex-Apps", "codex_apps_x", "alpha"],
+        inheritedServerNames: [
+          "codex_apps__gamma_",
+          "Codex-Apps",
+          "codex_apps_x",
+          "mcp__codex_apps__gamma",
+          "alpha",
+        ],
         deniedServerNames: [],
         deniedAppPatterns: ["mcp__codex_apps__gamma_*"],
         configuredServerNames: ["alpha"],
       }),
-    ).toEqual(["Codex-Apps", "codex_apps__gamma_"]);
+    ).toEqual(["Codex-Apps", "codex_apps__gamma_", "mcp__codex_apps__gamma"]);
     expect(
       resolveDeniedInheritedMcpServerNames({
         inheritedServerNames: ["codex_apps__gamma_", "alpha"],

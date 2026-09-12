@@ -61,6 +61,9 @@ describe("resolveCodexNativeMcpServerNamespace", () => {
   it("prefixes and sanitizes the native server key the way Codex names its tools", () => {
     expect(resolveCodexNativeMcpServerNamespace("codex-apps")).toBe("mcp__codex_apps__");
     expect(resolveCodexNativeMcpServerNamespace("alpha")).toBe("mcp__alpha__");
+    expect(resolveCodexNativeMcpServerNamespace("mcp__codex_apps__gamma")).toBe(
+      "mcp__codex_apps__gamma__",
+    );
   });
 });
 

@@ -35,7 +35,8 @@ export function normalizeHarnessNativeAppDenyPrefix(
  * `<mcp prefix><server>__`, where `<mcp prefix>` is the leading segment of the
  * native app prefix (`mcp__` for `mcp__codex_apps__`). Server keys are lowercased
  * and every character outside `[a-z0-9_]` becomes `_`, which over-approximates
- * the harness's own sanitizer so an overlap is never missed.
+ * the harness's own sanitizer so an overlap is never missed. A key that already
+ * starts with the MCP prefix keeps it, as Codex does, instead of gaining a second.
  */
 export function resolveHarnessNativeAppDenyReservedNamespaces(
   config: OpenClawConfig | undefined,
@@ -51,10 +52,11 @@ export function resolveHarnessNativeAppDenyReservedNamespaces(
       : normalizedPrefix.slice(0, separatorIndex + TOOL_NAME_SEPARATOR.length);
   const configured = normalizeConfiguredMcpServers(config?.mcp?.servers);
   const { staticServers } = partitionMcpServersByConnectionScope(configured);
-  const namespaces = Object.keys(staticServers).map(
-    (serverName) =>
-      `${mcpPrefix}${serverName.toLowerCase().replace(/[^a-z0-9_]/g, "_")}${TOOL_NAME_SEPARATOR}`,
-  );
+  const namespaces = Object.keys(staticServers).map((serverName) => {
+    const sanitized = serverName.toLowerCase().replace(/[^a-z0-9_]/g, "_");
+    const prefixed = sanitized.startsWith(mcpPrefix) ? sanitized : `${mcpPrefix}${sanitized}`;
+    return `${prefixed}${TOOL_NAME_SEPARATOR}`;
+  });
   return [...new Set(namespaces)].toSorted();
 }
 
