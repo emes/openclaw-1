@@ -32,8 +32,9 @@ import {
   renderSettingsSection,
 } from "../../components/settings-ui.ts";
 import { renderSettingsWorkspace } from "../../components/settings-workspace.ts";
-import { i18n, t } from "../../i18n/index.ts";
+import { t } from "../../i18n/index.ts";
 import { formatUiError } from "../../lib/format-error.ts";
+import { formatDateTimeMs } from "../../lib/format.ts";
 import { OpenClawLightDomElement } from "../../lit/openclaw-element.ts";
 import { SubscriptionsController } from "../../lit/subscriptions-controller.ts";
 
@@ -58,13 +59,6 @@ function grantIsActive(grant: ExecApprovalStandingGrant, nowMs: number): boolean
 }
 const APPROVAL_HISTORY_REQUIRED_SCOPE = "operator.approvals";
 const APPROVALS_DOCS_URL = "https://docs.openclaw.ai/tools/exec-approvals";
-
-function formatResolvedAt(timestampMs: number): string {
-  return new Intl.DateTimeFormat(i18n.getLocale(), {
-    dateStyle: "medium",
-    timeStyle: "short",
-  }).format(new Date(timestampMs));
-}
 
 const APPROVAL_KIND_LABELS = {
   exec: "approvalHistory.kinds.exec",
@@ -186,7 +180,10 @@ class ApprovalsPage extends OpenClawLightDomElement {
     this.loading = false;
     this.loadingMore = false;
     this.historyRefreshPending = false;
+    this.revokingGrantId = null;
     if (clearData) {
+      this.grants = [];
+      this.grantsError = null;
       this.hasLoaded = false;
       this.items = [];
       this.nextCursor = null;
@@ -247,16 +244,7 @@ class ApprovalsPage extends OpenClawLightDomElement {
       this.loadingMore = true;
     }
     this.error = null;
-    const isCurrent = () =>
-      this.isConnected &&
-      this.connected &&
-      this.approvalsAccess &&
-      this.gatewaySource === gateway &&
-      this.context.gateway === gateway &&
-      gateway.snapshot.phase === "connected" &&
-      readGatewayOperatorAccess(gateway.snapshot).canReviewApprovals &&
-      this.client === client &&
-      this.requestGeneration === generation;
+    const isCurrent = () => this.isCurrentRequest(client, gateway, generation);
     try {
       const result = await client.request<ApprovalHistoryResult>("approval.history", {
         ...(cursor ? { cursor } : {}),
@@ -308,23 +296,56 @@ class ApprovalsPage extends OpenClawLightDomElement {
     }
   }
 
+  private isCurrentRequest(
+    client: GatewayBrowserClient,
+    gateway: ApplicationContext["gateway"],
+    generation: number,
+  ): boolean {
+    return (
+      this.isConnected &&
+      this.connected &&
+      this.approvalsAccess &&
+      this.gatewaySource === gateway &&
+      this.context.gateway === gateway &&
+      gateway.snapshot.phase === "connected" &&
+      readGatewayOperatorAccess(gateway.snapshot).canReviewApprovals &&
+      this.client === client &&
+      this.requestGeneration === generation
+    );
+  }
+
   private async revokeGrant(grantId: string): Promise<void> {
     const client = this.client;
-    if (!client || this.revokingGrantId !== null) {
+    const gateway = this.gatewaySource;
+    const generation = this.requestGeneration;
+    if (
+      !client ||
+      !gateway ||
+      this.revokingGrantId !== null ||
+      !this.isCurrentRequest(client, gateway, generation)
+    ) {
       return;
     }
+    const isCurrent = () => this.isCurrentRequest(client, gateway, generation);
     this.revokingGrantId = grantId;
     try {
       await client.request("exec.approval.grants.revoke", { grantId });
+      if (!isCurrent()) {
+        return;
+      }
       const nowMs = Date.now();
       this.grants = this.grants.map((grant) =>
         grant.grantId === grantId ? { ...grant, revokedAtMs: nowMs } : grant,
       );
       this.grantsError = null;
     } catch (error) {
-      this.grantsError = formatUiError(error);
+      if (isCurrent()) {
+        this.grantsError = formatUiError(error);
+      }
     } finally {
-      this.revokingGrantId = null;
+      if (isCurrent()) {
+        this.revokingGrantId = null;
+      }
     }
   }
 
@@ -457,7 +478,7 @@ class ApprovalsPage extends OpenClawLightDomElement {
                     (item) => html`
                       <tr>
                         <td data-label=${t("approvalHistory.columns.resolved")}>
-                          ${formatResolvedAt(item.resolvedAtMs)}
+                          ${formatDateTimeMs(item.resolvedAtMs, { dateStyle: "medium", timeStyle: "short" })}
                         </td>
                         <td data-label=${t("approvalHistory.columns.kind")}>
                           ${t(APPROVAL_KIND_LABELS[item.presentation.kind])}

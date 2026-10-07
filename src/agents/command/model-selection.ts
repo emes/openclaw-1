@@ -69,14 +69,14 @@ import {
   resolveEffectiveAgentRuntime,
 } from "../thinking-runtime.js";
 import { persistAgentSession } from "./attempt-execution.shared.js";
-import { normalizeAgentCommandModelRef, parseAgentCommandModelRef } from "./model-ref.js";
+import {
+  normalizeAgentCommandModelRef,
+  normalizeExplicitOverrideInput,
+  parseAgentCommandModelRef,
+} from "./model-ref.js";
 import { prepareCommandModelCatalog } from "./model-selection-catalog.js";
-import { normalizeExplicitOverrideInput } from "./prepare.js";
-import type { resolveAgentRunContext } from "./run-context.js";
 import { loadTranscriptResolveRuntime } from "./runtime-loaders.js";
-import type { AgentCommandOpts } from "./types.js";
-
-type AgentRunContext = ReturnType<typeof resolveAgentRunContext>;
+import type { AgentCommandOpts, AgentRunContext } from "./types.js";
 
 export async function resolveEmbeddedModelSelection(params: {
   cfg: OpenClawConfig;
@@ -117,19 +117,10 @@ export async function resolveEmbeddedModelSelection(params: {
   let provider = defaultProvider;
   let model = defaultModel;
   let sessionEntry = params.sessionEntry;
-  const initialModelOverrideSource = sessionEntry?.modelOverrideSource;
-  const hasStoredOverride = Boolean(
-    initialModelOverrideSource !== "default" &&
+  let hasStoredOverride = Boolean(
+    sessionEntry?.modelOverrideSource !== "default" &&
     (sessionEntry?.modelOverride || sessionEntry?.providerOverride),
   );
-  let storedModelOverrideSource =
-    hasStoredOverride && initialModelOverrideSource !== "default"
-      ? initialModelOverrideSource
-      : undefined;
-  let hasStoredAutoFallbackProvenance =
-    hasStoredOverride && hasSessionAutoModelFallbackProvenance(sessionEntry);
-  let hasLegacyAutoFallbackOverrideWithoutOrigin =
-    hasStoredOverride && hasLegacyAutoFallbackWithoutOrigin(sessionEntry);
   const explicitProviderOverride =
     typeof params.opts.provider === "string"
       ? normalizeExplicitOverrideInput(params.opts.provider, "provider")
@@ -175,13 +166,12 @@ export async function resolveEmbeddedModelSelection(params: {
     const initialEntry = sessionEntry;
     const entry = { ...sessionEntry };
     let entryUpdated = false;
-    if (hasLegacyAutoFallbackOverrideWithoutOrigin) {
+    if (hasLegacyAutoFallbackWithoutOrigin(entry)) {
       const { updated } = applyModelOverrideToSessionEntry({
         entry,
         selection: { provider: defaultProvider, model: defaultModel, isDefault: true },
       });
       if (updated) {
-        storedModelOverrideSource = undefined;
         entryUpdated = true;
       }
     }
@@ -216,26 +206,22 @@ export async function resolveEmbeddedModelSelection(params: {
         entry,
         assertCommitAllowed: operatorAuthority?.assertCurrent,
       });
-      const adoptedModelOverrideSource = sessionEntry?.modelOverrideSource;
-      const adoptedHasStoredOverride = Boolean(
-        adoptedModelOverrideSource !== "default" &&
-        (sessionEntry?.modelOverride || sessionEntry?.providerOverride),
-      );
-      storedModelOverrideSource = adoptedHasStoredOverride
-        ? adoptedModelOverrideSource === "default"
-          ? undefined
-          : adoptedModelOverrideSource
-        : undefined;
-      hasStoredAutoFallbackProvenance =
-        adoptedHasStoredOverride && hasSessionAutoModelFallbackProvenance(sessionEntry);
-      hasLegacyAutoFallbackOverrideWithoutOrigin =
-        adoptedHasStoredOverride && hasLegacyAutoFallbackWithoutOrigin(sessionEntry);
+      hasStoredOverride =
+        sessionEntry?.modelOverrideSource !== "default" &&
+        Boolean(sessionEntry?.modelOverride || sessionEntry?.providerOverride);
     }
   }
 
-  if (isModelSelectionLocked(sessionEntry)) {
-    hasLegacyAutoFallbackOverrideWithoutOrigin = false;
-  }
+  let storedModelOverrideSource =
+    hasStoredOverride && sessionEntry?.modelOverrideSource !== "default"
+      ? sessionEntry?.modelOverrideSource
+      : undefined;
+  let hasStoredAutoFallbackProvenance =
+    hasStoredOverride && hasSessionAutoModelFallbackProvenance(sessionEntry);
+  const hasLegacyAutoFallbackOverrideWithoutOrigin =
+    hasStoredOverride &&
+    !isModelSelectionLocked(sessionEntry) &&
+    hasLegacyAutoFallbackWithoutOrigin(sessionEntry);
 
   const effectiveStoredOverride = hasLegacyAutoFallbackOverrideWithoutOrigin
     ? null
@@ -357,26 +343,19 @@ export async function resolveEmbeddedModelSelection(params: {
   }
 
   if (hasExplicitRunOverride) {
-    const explicitRef = explicitModelOverride
-      ? explicitProviderOverride
-        ? normalizeAgentCommandModelRef(
-            params.cfg,
-            explicitProviderOverride,
-            explicitModelOverride,
-            params.modelManifestContext,
-          )
-        : parseAgentCommandModelRef(
+    const explicitRef = explicitProviderOverride
+      ? normalizeAgentCommandModelRef(
+          params.cfg,
+          explicitProviderOverride,
+          explicitModelOverride ?? model,
+          params.modelManifestContext,
+        )
+      : explicitModelOverride
+        ? parseAgentCommandModelRef(
             params.cfg,
             params.sessionAgentId,
             explicitModelOverride,
             provider,
-            params.modelManifestContext,
-          )
-      : explicitProviderOverride
-        ? normalizeAgentCommandModelRef(
-            params.cfg,
-            explicitProviderOverride,
-            model,
             params.modelManifestContext,
           )
         : null;
@@ -468,19 +447,15 @@ export async function resolveEmbeddedModelSelection(params: {
       agentId: params.sessionAgentId,
       sessionKey: params.sessionKey,
     });
-    const authAliasLookupParams = params.pluginsEnabled
-      ? {
-          config: authConfig,
-          workspaceDir: params.workspaceDir,
-          ...(params.manifestMetadataSnapshot
-            ? { metadataSnapshot: params.manifestMetadataSnapshot }
-            : {}),
-        }
-      : {
-          config: authConfig,
-          workspaceDir: params.workspaceDir,
-          metadataSnapshot: { plugins: [] },
-        };
+    const authAliasLookupParams = {
+      config: authConfig,
+      workspaceDir: params.workspaceDir,
+      ...(params.pluginsEnabled
+        ? params.manifestMetadataSnapshot
+          ? { metadataSnapshot: params.manifestMetadataSnapshot }
+          : {}
+        : { metadataSnapshot: { plugins: [] } }),
+    };
     const acceptedAuthProviders = listOpenAIAuthProfileProvidersForAgentRuntime({
       provider: providerForAuthProfileValidation,
       harnessRuntime: validationHarnessPolicy.runtime,
@@ -646,17 +621,12 @@ export async function resolveEmbeddedModelSelection(params: {
   // Fallback tokens must not adopt entries from a store without a nonempty session key.
   const hasKeyedSessionStore = Boolean(params.sessionStore && params.sessionKey);
   const resolvedSessionFile = await resolveSessionTranscriptFile({
-    sessionId: params.sessionId,
     sessionKey: params.sessionKey ?? params.sessionId,
     sessionStore:
       hasKeyedSessionStore && !params.suppressVisibleSessionEffects
         ? params.sessionStore
         : undefined,
-    storePath:
-      hasKeyedSessionStore && params.suppressVisibleSessionEffects ? undefined : params.storePath,
     sessionEntry,
-    agentId: params.sessionAgentId,
-    threadId: params.opts.threadId,
   });
   const sessionFile = resolvedSessionFile.sessionFile;
   sessionEntry = resolvedSessionFile.sessionEntry;

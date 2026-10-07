@@ -1,9 +1,9 @@
 // Owns durable outbound admission, immutable payload custody, and media staging.
 import { createRenderedMessageBatchPlan } from "../../channels/message/rendered-batch.js";
 import { resolveOutboundMediaMaxBytes } from "../../media/configured-max-bytes.js";
-import { createInitialDeliveryProducerClaim } from "../delivery-queue-sqlite-claim.js";
+import { createInitialDeliveryProducerClaim } from "../delivery-queue-sqlite-claim.kernel.js";
 import { isDeliveryRecoveryOwnedRetry } from "../delivery-recovery.shared.js";
-import { throwSqliteLifecycleErrors } from "../sqlite-coordinator.js";
+import { throwSqliteLifecycleErrors } from "../sqlite-lifecycle-errors.js";
 import type { InternalDeliverOutboundPayloadsParams } from "./deliver-contracts.js";
 import {
   collectPayloadMediaSources,
@@ -24,6 +24,7 @@ import type { StableDeliveryPreparation } from "./delivery-queue-storage.types.j
 import {
   acceptedPreparedOutboundEntries,
   mapPreparedOutboundAcceptedPayloads,
+  preparedOutboundPayloads,
   type PreparedOutboundBatch,
 } from "./prepared-batch.js";
 import { normalizeOutboundReplyFacts } from "./reply-policy.js";
@@ -66,9 +67,7 @@ export function restoreQueuedDeliveryCustody(
       target,
     );
   }
-  const payloads = acceptedPreparedOutboundEntries(custody.preparedBatch).map(
-    (prepared) => prepared.payload,
-  );
+  const payloads = preparedOutboundPayloads(custody.preparedBatch);
   return { ...params, ...custody, payloads, sessionGeneration: entry.sessionGeneration };
 }
 
@@ -110,13 +109,17 @@ export async function stageAndEnqueueOutboundDelivery(
     {
       stateDir,
       payloads: acceptedPayloads,
-      ...(params.sessionGeneration ? { artifactFormat: "session-generation-v1" as const } : {}),
+      ...(params.deliveryCompletion?.kind === "pending-final" &&
+      params.deliveryCompletion.commandOwnerReference !== undefined
+        ? { artifactFormat: "command-owner-v1" as const }
+        : params.sessionGeneration
+          ? { artifactFormat: "session-generation-v1" as const }
+          : {}),
       // Resolved exactly as the live send resolves it: staging must neither
       // reject media the send would deliver (agent workspace sources are only
       // reachable through the agent-scoped roots) nor read more than the send may.
       mediaAccess: resolveOutboundMediaAccessForSend(
         params,
-        channel,
         collectPayloadMediaSources(acceptedPayloads),
       ),
       maxBytes: resolveOutboundMediaMaxBytes({
@@ -191,7 +194,7 @@ export async function stageAndEnqueueOutboundDelivery(
             params.deliveryQueueStateContext,
           );
       if (!queued.created) {
-        cancelDeliveryQueueMediaRetention(
+        await cancelDeliveryQueueMediaRetention(
           staged.mediaStageId,
           stateDir,
           params.deliveryQueueStateContext,
@@ -222,7 +225,7 @@ export async function stageAndEnqueueOutboundDelivery(
     }
     const errors: unknown[] = [err];
     try {
-      cancelDeliveryQueueMediaRetention(
+      await cancelDeliveryQueueMediaRetention(
         staged.mediaStageId,
         stateDir,
         params.deliveryQueueStateContext,
